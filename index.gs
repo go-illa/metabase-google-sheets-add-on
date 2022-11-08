@@ -4,9 +4,10 @@ function onInstall() {
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
-  ui.createMenu('Metabase')
+  ui.createMenu('Illa Metabase')
     .addItem('Import Question', 'importQuestion')
     .addItem('Import All Questions in Sheets', 'importAllQuestions')
+    .addItem('Import Question Trigger', 'automateImport')
     .addToUi();
 }
 
@@ -134,6 +135,73 @@ function importAllQuestions() {
   }
 }
 
+function automateImport() {
+  var questions = getSheetNumbers();
+  for (var i = 0; i < questions.length; i++) {
+    questions[i].done = false;
+  }
+
+  var questionNumbers = [];
+  for (var i = 0; i < questions.length; i++) {
+    questionNumbers.push(questions[i].questionNumber);
+  }
+
+  var startDate = new Date().toLocaleTimeString();
+  var htmlOutput = HtmlService.createHtmlOutput('<p>Started running at ' + startDate + '...</p>');
+  var questionsSuccess = [];
+  var questionsError = [];
+  for (var i = 0; i < questions.length; i++) {
+    var questionNumber = questions[i].questionNumber;
+    var sheetName = questions[i].sheetName;
+    var status = getQuestionAsCSV(questionNumber, sheetName);
+    if (status.success === true) {
+      questionsSuccess.push(questionNumber);
+    } else if (status.success === false) {
+      questionsError.push({
+        'number': questionNumber,
+        'errorMessage': status.error
+      });
+    }
+  }
+
+  var endDate = new Date().toLocaleTimeString();
+  htmlOutput.append('<p>Finished at ' + endDate + '.</p></hr>');
+  if (questionsSuccess.length > 0) {
+    htmlOutput.append('<p>Successfully imported:</p>');
+    for (var i = 0; i < questionsSuccess.length; i++) {
+      htmlOutput.append('<li>' + questionsSuccess[i] + '</li>');
+    }
+  }
+  if (questionsError.length > 0) {
+    htmlOutput.append('<p>Failed to import:</p>');
+    for (var i = 0; i < questionsError.length; i++) {
+      htmlOutput.append('<li>' + questionsError[i].number + '</br>(' + questionsError[i].errorMessage + ')</li>');
+    }
+  }
+
+  var finalStatus;
+  if (questionsError.length === 0) {
+    finalStatus = true;
+  } else {
+    finalStatus = false;
+  }
+  var log = {
+    'user': Session.getActiveUser().getEmail(),
+    'function': 'importAllQuestions',
+    'questionNumber': questionNumbers,
+    'status': {
+      'success': finalStatus,
+      'questionsSuccess': questionsSuccess,
+      'questionsError': questionsError
+    }
+  };
+  if (log.status === true) {
+    console.log(log);
+  } else {
+    console.error(log);
+  }
+}
+
 function getSheetNumbers() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheets = ss.getSheets();
@@ -202,7 +270,7 @@ function getQuestionAndFillSheet(baseUrl, token, metabaseQuestionNum, sheetName)
   var statusCode = response.getResponseCode();
 
   if (statusCode == 200 || statusCode == 202) {
-    var cleanedContentText = response.getContentText("UTF-8").replace(/"[^"]*(?:""[^"]*)*"/g, function(m) { return m.replace(/\n/g, ''); });
+    var cleanedContentText = response.getContentText("UTF-8").replace(/"[^"]*(?:""[^"]*)*"/g, function (m) { return m.replace(/\n/g, ''); });
     var values = Utilities.parseCsv(cleanedContentText);
     try {
       fillSheet(values, sheetName);
